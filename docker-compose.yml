@@ -1,0 +1,59 @@
+# 生产部署版（VPS + Nginx HTTPS）
+# 已移除官方 compose 里的 watchtower（它挂载 docker.sock，等同 root 权限）
+# 容器只监听 127.0.0.1，由 Nginx 对外提供 HTTPS。
+services:
+  freellmapi:
+    # 改成你自己的镜像，例如 ghcr.io/<你的用户名>/freellmapi:latest
+    image: ${FREELLMAPI_IMAGE:-ghcr.io/tashfeenahmed/freellmapi:latest}
+    # 想自己从源码构建就解开下面三行注释：
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # 已移除付费引导，这里留空避免任何外链
+      PREMIUM_SITE_URL: ""
+    ports:
+      # 只绑定本机，Nginx 在前面。切勿改成 0.0.0.0。
+      - "127.0.0.1:${PORT:-3001}:3001"
+    volumes:
+      - freellmapi-data:/app/server/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+    # --- 安全加固 ---
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # 内存上限，避免跑满把 VPS 拖垮（按需调整）
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+
+    # --- 日志轮转，防止日志把磁盘写满 ---
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/api/ping').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1));"
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  freellmapi-data:
