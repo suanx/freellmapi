@@ -1271,7 +1271,7 @@
     "creditsPerSearchOther": "每次搜索 {count} 个额度",
     "default": "默认",
     "makeDefault": "设为默认",
-    "premiumBadge": "高级版 · {date} 起免费",
+    "premiumBadge": "{date} 起免费",
     "thisMonth": "本月 {count} 次",
     "featureNews": "新闻",
     "featureAnswer": "带来源的回答",

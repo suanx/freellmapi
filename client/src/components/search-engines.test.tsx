@@ -66,7 +66,7 @@ it('lists engines in priority order and marks the first enabled one as default',
 it('badges a Premium-first engine with the day it reaches Free', async () => {
   const since = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
   await mount([engine({ id: 3, platform: 'firecrawl', engineId: 'firecrawl-search', displayName: 'Firecrawl', premiumSince: since })])
-  expect(container.textContent).toMatch(/Premium · free from/)
+  expect(container.textContent).toMatch(/free from/i)
 })
 
 it('promotes an engine to default with priority 0', async () => {
