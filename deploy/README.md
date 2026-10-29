@@ -36,7 +36,17 @@
 
 Dockerfile 本身已是多阶段构建 + `npm prune --omit=dev`，无需改动。
 
-## 三、快速部署（Ubuntu / Debian）
+## 目录
+
+- 一、已移除的付费引导与外链
+- 二、部署优化
+- 三、命令行部署（setup.sh 一键 / 手动）
+- 四、宝塔面板部署
+- 五、构建镜像
+- 六、客户端接入
+- 七、注意事项
+
+## 三、命令行部署（Ubuntu / Debian）
 
 前置：域名已解析到本机公网 IP，防火墙放行 80 / 443。
 
@@ -49,7 +59,7 @@ chmod +x deploy/setup.sh
 
 脚本会依次完成：装 Docker → 生成 `ENCRYPTION_KEY` → 起容器（仅本机端口）→ 装 Nginx → certbot 签证书 → 输出访问地址。
 
-## 四、手动部署
+## 三·B、手动部署（命令行）
 
 ```bash
 # .env（ENCRYPTION_KEY 务必备份，丢了就解不开已存的厂商 Key）
@@ -69,6 +79,97 @@ ln -sf /etc/nginx/sites-available/freellmapi /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 certbot --nginx -d 你的域名
 ```
+
+## 四、宝塔面板部署
+
+适合习惯图形界面操作的场景。**注意：宝塔的反代默认开缓冲，必须手动关掉，否则 SSE 流式输出会攒成一坨再吐出来（假流式）。**
+
+### 第 1 步：装 Docker
+
+宝塔面板 → **软件商店** → 搜索「Docker」→ 安装 **Docker管理器**
+
+装完左侧菜单会出现 Docker 入口。
+
+### 第 2 步：起容器（建议用终端，别用面板创建）
+
+宝塔「创建容器」的界面通常只能填端口、无法指定绑定 IP，容易把 3001 直接暴露到公网。用终端更可控：
+
+宝塔 → **终端**，粘贴：
+
+```bash
+mkdir -p /opt/freellmapi && cd /opt/freellmapi
+ENCRYPTION_KEY="$(openssl rand -hex 32)"
+printf 'ENCRYPTION_KEY=%s\nPORT=3001\n' "$ENCRYPTION_KEY" > .env
+cat > docker-compose.yml <<'EOF'
+services:
+  freellmapi:
+    image: ghcr.io/suanx/freellmapi:main
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - freellmapi-data:/app/server/data
+    restart: unless-stopped
+EOF
+docker compose up -d
+```
+
+验证：
+
+```bash
+curl http://127.0.0.1:3001/api/ping    # 返回 200 即成功
+```
+
+容器起来后，宝塔 **Docker** 菜单里能看到它，日常重启、看日志都可以点面板操作。
+
+> 若提示镜像拉取失败，先去 GitHub 仓库 → 右侧 Packages → freellmapi → Package settings → Change visibility → **Public**。
+
+### 第 3 步：建站点 + 反向代理
+
+**网站** → **添加站点**
+- 域名填你的（如 `llm.example.com`）
+- **不要**勾选创建数据库 / FTP
+- PHP 版本选**纯静态**
+
+进站点 → **反向代理** → **添加反向代理**
+- 代理名称：随意
+- 目标 URL：`http://127.0.0.1:3001`
+- 发送域名：`$host`
+
+### 第 4 步：关键 —— 关掉缓冲
+
+站点 → **配置文件**，在 `location /` 块内手动加入两行：
+
+```nginx
+proxy_buffering off;
+proxy_read_timeout 300s;
+```
+
+保存。**这步不做，流式输出就是假的。**
+
+### 第 5 步：SSL
+
+站点 → **SSL** → **Let's Encrypt** → 选你的域名 → 申请 → 打开**强制 HTTPS**
+
+宝塔会自动续期，比手动 certbot 省事。
+
+### 第 6 步：安全加固（公网必做，二选一）
+
+**方式 A：IP 白名单** —— 站点 → 配置文件，在 `server` 块内加：
+
+```nginx
+allow 你的公网IP;
+deny all;
+```
+
+**方式 B：密码访问** —— 站点 → **目录保护**，填用户名密码即可。宝塔自带，比手动配 Basic Auth 方便。
+
+### 第 7 步：别放行 3001
+
+宝塔 → **安全** → **系统防火墙**，只放行 80、443 和你的 SSH 端口即可。**3001 绝不能对公网开放**。
 
 ## 五、构建镜像
 
